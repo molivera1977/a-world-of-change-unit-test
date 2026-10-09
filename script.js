@@ -11,8 +11,9 @@
      needs the Teacher PIN (new session ids, labeled "Retake").
    - Same question ids + skill tags as the review, so the dashboard
      compares review → test skill by skill.
-   - Written: 💡 Hint button reveals a sentence starter (Marcos 10/7);
-     a starter blank (____) left in an answer blocks turn-in.
+   - Written: R.A.D. — three boxes (Restate, Answer, Detail) per question,
+     each with sentence starters to read and retype (Marcos 10/9; the 10/7
+     hint + ____ version failed in class).
    Game keys: awoc-test-vocab · awoc-test-comp · awoc-test-cloze
    Written: action:'written' → awoc_test_written
    PIN: 9377
@@ -412,16 +413,24 @@ function addHighlightFallback(u, spans) {
 }
 
 /* Read one element aloud with word highlighting (toggle: tap again to stop).
-   Blanks (____) are said as "blank"; icons are skipped. */
+   Icons are skipped; "…" is read as a pause. */
 function speakElement(btn, el, rate) {
   if (activeSpeakBtn === btn) { stopActiveSpeech(); return; }
   stopActiveSpeech();
   if (!el) return;
   if (!el.querySelector('.wrd')) el.innerHTML = wrapWords(el.innerHTML);
-  const spans = Array.from(el.querySelectorAll('.wrd')).filter(s => /[A-Za-z0-9_]/.test(s.textContent));
+  // skip labels marked data-noread (the R / A / D badge) and icon-only words
+  const spans = Array.from(el.querySelectorAll('.wrd'))
+    .filter(s => /[A-Za-z0-9_]/.test(s.textContent) && !s.closest('[data-noread]'));
   if (!spans.length) return;
   activeSpeakBtn = btn; btn.textContent = '⏹';
-  const text = spans.map(s => s.textContent.replace(/_{2,}/g, 'blank')).join(' ');
+  // a short pause between lines: end a line with a period when it has no punctuation
+  const words = spans.map(s => s.textContent.replace(/_{2,}/g, 'blank'));
+  spans.forEach((s, i) => {
+    const next = spans[i + 1];
+    if (next && s.closest('div,p,li') !== next.closest('div,p,li') && !/[.!?:,;"”]$/.test(words[i])) words[i] += '.';
+  });
+  const text = words.join(' ');
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US'; u.rate = rate || 0.92;
   let hlIdx = 0;
@@ -441,7 +450,6 @@ function speakElement(btn, el, rate) {
 
 function speakDir(btn) { speakElement(btn, btn.closest('.dir-section').querySelector('.dir-text'), 0.92); }
 function speakWrittenPrompt(btn, promptId) { speakElement(btn, document.getElementById('prompt-text-' + promptId), 0.92); }
-function speakHint(btn, promptId) { speakElement(btn, document.getElementById('hint-frame-' + promptId), 0.92); }
 
 /* ── READ-ALOUD INTRO SPEAKS ITSELF ─────────────────
    Marcos 10/6: the "Read Aloud is Available!" screen announces itself
@@ -1219,9 +1227,14 @@ const app = {
     if (pct >= 90) startConfetti(pct);
   },
 
-  /* ══ WRITTEN RESPONSE ══ */
+  /* ══ WRITTEN RESPONSE — R.A.D. ══
+     Each question = three boxes (Restate, Answer, Detail). Above each box the
+     sentence starters are SHOWN for the student to read, hear and retype —
+     nothing is inserted for them and there are no blanks (Marcos 10/9). The
+     three boxes are put together underneath as "Your R.A.D. answer". */
   _writtenPreview: false,
-  _hintsUsed: {},
+
+  _radIds(p) { return (window.RAD_STEPS || []).map(st => `${p.id}-${st.key}`); },
 
   showWrittenScreen() {
     this._writtenPreview = reviewMode;
@@ -1238,6 +1251,27 @@ const app = {
     container.innerHTML = '';
     container.classList.remove('hidden');
     (window.WRITTEN_PROMPTS || []).forEach(p => {
+      const steps = (window.RAD_STEPS || []).map(st => {
+        const fid = `${p.id}-${st.key}`;
+        const lines = ((p.starters || {})[st.key] || []).map(t => `<div class="rad-starter-line">${t}</div>`).join('');
+        return `
+          <div class="rad-step rad-step-${st.key}">
+            <div class="rad-step-head">
+              <button class="speak-btn" onclick="speakElement(this, document.getElementById('rad-read-${fid}'), 0.92)" title="Read this part aloud">🔊</button>
+              <div id="rad-read-${fid}">
+                <div class="rad-step-title"><span class="rad-letter" data-noread>${st.key}</span> ${st.name}</div>
+                <div class="rad-step-tip">${((p.tips || {})[st.key]) || st.tip}</div>
+                <div class="rad-starter">
+                  <div class="rad-starter-label">Start like this:</div>
+                  ${lines}
+                </div>
+              </div>
+            </div>
+            <textarea class="written-textarea rad-box" id="textarea-${fid}" rows="3"
+                      aria-label="${p.label} — ${st.name}" placeholder="Type your ${st.name} sentence here…"
+                      oninput="app._updateWordCount('${p.id}'); app._autosaveDraft()"></textarea>
+          </div>`;
+      }).join('');
       const card = document.createElement('div');
       card.className = 'written-prompt-card';
       card.innerHTML = `
@@ -1246,20 +1280,16 @@ const app = {
           <div class="written-prompt-label">${p.label}</div>
         </div>
         <div class="written-prompt-text" id="prompt-text-${p.id}">${p.prompt}</div>
-        <button class="hint-btn" id="hint-btn-${p.id}" onclick="app.showHint('${p.id}')" aria-expanded="false" aria-controls="hint-box-${p.id}">💡 Need a hint?</button>
-        <div class="hint-box hidden" id="hint-box-${p.id}">
-          <div class="hint-row">
-            <button class="speak-btn" onclick="speakHint(this,'${p.id}')" title="Read the sentence starter aloud">🔊</button>
+        ${steps}
+        <div class="rad-built hidden" id="rad-built-${p.id}">
+          <div class="rad-step-head">
+            <button class="speak-btn" onclick="speakElement(this, document.getElementById('rad-built-text-${p.id}'), 0.92)" title="Read your answer aloud">🔊</button>
             <div>
-              <div style="font-size:0.78rem;font-weight:800;color:#7a5b00;margin-bottom:2px;">Sentence starter — fill in every blank ( ____ ):</div>
-              <div class="hint-frame" id="hint-frame-${p.id}">${p.frame}</div>
-              <button class="hint-use-btn" id="hint-use-${p.id}" onclick="app.useStarter('${p.id}')">✏️ Put this starter in my answer box</button>
+              <div class="rad-built-label">📝 Your R.A.D. answer:</div>
+              <div class="rad-built-text" id="rad-built-text-${p.id}"></div>
             </div>
           </div>
         </div>
-        <textarea class="written-textarea" id="textarea-${p.id}" aria-label="${p.label} answer"
-                  placeholder="Write your answer here…"
-                  oninput="app._updateWordCount('${p.id}', this); app._autosaveDraft()"></textarea>
         <div class="word-count-row">Words: <span class="word-count-val" id="wc-${p.id}">0</span><span style="color:#888;font-size:0.8rem;"> / ${WRITTEN_MIN_WORDS} minimum</span></div>`;
       container.appendChild(card);
     });
@@ -1268,63 +1298,64 @@ const app = {
     btn.classList.remove('hidden'); btn.disabled = false; btn.textContent = '✅ Turn In My Written Answers';
     document.getElementById('written-submit-error').textContent = '';
     document.getElementById('written-success-panel').classList.add('hidden');
-    this._hintsUsed = {};
     this._restoreDraft();
+    (window.WRITTEN_PROMPTS || []).forEach(p => this._updateWordCount(p.id));
     this._startWrittenTimer();
   },
 
-  /* 💡 Hint: shows the sentence starter (and remembers that the student opened it) */
-  showHint(id) {
-    const box = document.getElementById('hint-box-' + id);
-    const btn = document.getElementById('hint-btn-' + id);
-    if (!box) return;
-    const open = box.classList.contains('hidden');
-    box.classList.toggle('hidden', !open);
-    if (btn) { btn.textContent = open ? '💡 Hide the hint' : '💡 Need a hint?'; btn.setAttribute('aria-expanded', String(open)); }
-    if (open) { this._hintsUsed[id] = true; this._autosaveDraft(); }
+  _radParts(p) {
+    return (window.RAD_STEPS || []).map(st => {
+      const ta = document.getElementById(`textarea-${p.id}-${st.key}`);
+      return { st, text: ta ? ta.value.trim() : '' };
+    });
   },
 
-  /* Copy the starter into the answer box (only into an empty box — never over their writing) */
-  useStarter(id) {
-    const p  = (window.WRITTEN_PROMPTS || []).find(x => x.id === id);
-    const ta = document.getElementById('textarea-' + id);
-    if (!p || !ta) return;
-    if (ta.value.trim()) ta.value = ta.value.replace(/\s+$/, '') + '\n' + p.frame;
-    else ta.value = p.frame;
-    this._hintsUsed[id] = true;
-    this._updateWordCount(id, ta);
-    this._autosaveDraft();
-    ta.focus();
-    const blank = ta.value.indexOf('____');
-    if (blank >= 0) ta.setSelectionRange(blank, blank + 4);
-  },
-
-  _updateWordCount(id, textarea) {
-    const words = countWords(textarea.value.replace(/_{2,}/g, ''));
+  /* Word count for the whole question + the put-together paragraph (shown as plain text) */
+  _updateWordCount(id) {
+    const p = (window.WRITTEN_PROMPTS || []).find(x => x.id === id);
+    if (!p) return;
+    const parts = this._radParts(p);
+    const words = parts.reduce((n, x) => n + countWords(x.text), 0);
     const el = document.getElementById(`wc-${id}`);
     if (el) { el.textContent = words; el.style.color = words >= WRITTEN_MIN_WORDS ? '#27ae60' : 'var(--danger)'; }
+    const built = document.getElementById(`rad-built-${id}`);
+    const txt = document.getElementById(`rad-built-text-${id}`);
+    const para = parts.map(x => x.text).filter(Boolean).join(' ');
+    if (txt) txt.textContent = para;
+    if (built) built.classList.toggle('hidden', !para);
   },
 
   _autosaveDraftTimer: null,
   _autosaveDraft() {
     if (this._writtenPreview) return;
     const draft = {};
-    (window.WRITTEN_PROMPTS || []).forEach(p => { const ta = document.getElementById(`textarea-${p.id}`); if (ta) draft[p.id] = ta.value; });
+    (window.WRITTEN_PROMPTS || []).forEach(p => this._radIds(p).forEach(fid => {
+      const ta = document.getElementById(`textarea-${fid}`); if (ta) draft[fid] = ta.value;
+    }));
     const name = this.studentName, round = this.round;
-    localStorage.setItem(draftKey(name), JSON.stringify({ name, round, draft, hints: this._hintsUsed }));
+    localStorage.setItem(draftKey(name), JSON.stringify({ name, round, draft }));
     clearTimeout(this._autosaveDraftTimer);
-    this._autosaveDraftTimer = setTimeout(() => saveWrittenDraftToServer(name, round, draft), 3000);
+    this._autosaveDraftTimer = setTimeout(() => saveWrittenDraftToServer(name, round, this._writtenPayload()), 3000);
   },
 
   _restoreDraft() {
     if (this._writtenPreview) return;
     const saved = readJSON(draftKey(this.studentName), null);
-    if (!saved || saved.name !== this.studentName || (saved.round || 1) !== this.round) return;
-    this._hintsUsed = saved.hints || {};
-    (window.WRITTEN_PROMPTS || []).forEach(p => {
-      const ta = document.getElementById(`textarea-${p.id}`);
-      if (ta && saved.draft && saved.draft[p.id]) { ta.value = saved.draft[p.id]; this._updateWordCount(p.id, ta); }
+    if (!saved || saved.name !== this.studentName || (saved.round || 1) !== this.round || !saved.draft) return;
+    Object.entries(saved.draft).forEach(([fid, val]) => {
+      const ta = document.getElementById(`textarea-${fid}`);
+      if (ta && val) ta.value = val;
     });
+  },
+
+  /* What the teacher sees: one line per R.A.D. part, labeled */
+  _writtenPayload() {
+    const out = {};
+    (window.WRITTEN_PROMPTS || []).forEach(p => {
+      out[p.id] = this._radParts(p).filter(x => x.text)
+        .map(x => `${x.st.key} — ${x.st.name}: ${x.text}`).join('\n');
+    });
+    return out;
   },
 
   _writtenTimerSeconds: 0,
@@ -1350,20 +1381,19 @@ const app = {
 
   submitWrittenResponses() {
     const prompts = window.WRITTEN_PROMPTS || [];
-    const responses = {};
-    prompts.forEach(p => { const ta = document.getElementById(`textarea-${p.id}`); responses[p.id] = ta ? ta.value.trim() : ''; });
+    const errEl = document.getElementById('written-submit-error');
+    if (!prompts.length) { errEl.textContent = '⚠️ The written questions did not load. Please refresh the page.'; return; }
 
     const errors = [];
-    if (!prompts.length) { document.getElementById('written-submit-error').textContent = '⚠️ The written questions did not load. Please refresh the page.'; return; }
     if (!this._writtenPreview) {
       prompts.forEach(p => {
-        const text = responses[p.id] || '';
-        if (/_{2,}/.test(text)) errors.push(`${p.label}: fill in every blank ( ____ ).`);
-        const c = countWords(text);
-        if (c < WRITTEN_MIN_WORDS) errors.push(`${p.label} needs at least ${WRITTEN_MIN_WORDS} words (you have ${c}).`);
+        const parts = this._radParts(p);
+        const empty = parts.filter(x => countWords(x.text) < 2).map(x => x.st.name);
+        if (empty.length) errors.push(`${p.label}: write your ${empty.length > 2 ? empty.slice(0, -1).join(', ') + ', and ' + empty[empty.length - 1] : empty.join(' and ')} ${empty.length > 1 ? 'sentences' : 'sentence'}.`);
+        const total = parts.reduce((n, x) => n + countWords(x.text), 0);
+        if (!empty.length && total < WRITTEN_MIN_WORDS) errors.push(`${p.label} needs at least ${WRITTEN_MIN_WORDS} words (you have ${total}).`);
       });
     }
-    const errEl = document.getElementById('written-submit-error');
     if (errors.length) { errEl.textContent = '⚠️ ' + errors.join('  '); return; }
     errEl.textContent = '';
     stopActiveSpeech();
@@ -1371,10 +1401,7 @@ const app = {
     clearTimeout(this._autosaveDraftTimer);
 
     if (!this._writtenPreview) {
-      // the teacher sees which answers came after opening the hint
-      const sent = {};
-      prompts.forEach(p => { sent[p.id] = (this._hintsUsed[p.id] ? '[💡 Hint used] ' : '') + responses[p.id]; });
-      submitWrittenToSheet(this.studentName, this.round, sent, this._writtenClock());
+      submitWrittenToSheet(this.studentName, this.round, this._writtenPayload(), this._writtenClock());
       const written = readJSON(WRITTEN_KEY, []);
       written.push({ name: this.studentName, round: this.round, timestamp: new Date().toISOString() });
       localStorage.setItem(WRITTEN_KEY, JSON.stringify(written));
