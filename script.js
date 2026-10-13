@@ -21,6 +21,7 @@
 
 /* ── CONFIG ─────────────────────────────────────────── */
 const TEST_OPEN     = true;    // false = students locked out; only Teacher Access works. Set true to open.
+const SHARE_MODE    = !!window.SHARE_MODE;   // set by share.js — a visitor's link, never a student's
 const INSTRUCT_SECS = 20;
 const READ_SECS     = 12;
 const STORAGE_KEY   = 'awoct_session_v1';        // + ':' + name — each student's unfinished multiple-choice part
@@ -234,6 +235,7 @@ function reviewStatus(name) {
 }
 
 function reviewGateOpen(name) {
+  if (SHARE_MODE) return true;   // a visitor does not need the review first
   if (readJSON(GATE_PASS_KEY, {})[name]) return true;
   const r = reviewStatus(name);
   return r.vocab && r.comp && r.cloze;
@@ -291,6 +293,8 @@ function renderStudentHome(name) {
   const seq = document.getElementById('section-select');
   const rc = document.getElementById('resume-container');
   [gate, doneCard, seq, rc].forEach(el => el && el.classList.add('hidden'));
+  // Shared preview: a finished test starts over instead of locking
+  if (SHARE_MODE && !getNextSection(name)) [SCORES_KEY, WRITTEN_KEY].forEach(k => localStorage.removeItem(k));
 
   if (!reviewGateOpen(name)) {
     const r = reviewStatus(name);
@@ -643,7 +647,7 @@ const app = {
 
   /* ── WELCOME / DIRECTIONS ── */
   showReadAloudIntro() {
-    if (!TEST_OPEN) return;
+    if (!TEST_OPEN && !SHARE_MODE) return;
     document.getElementById('welcome-panel').classList.add('hidden');
     this.show('readaloud-screen');
     setTimeout(speakReadAloudIntro, 150);   // announces itself (show() just cancelled any speech)
@@ -682,6 +686,11 @@ const app = {
     this.show('start-screen');
     document.getElementById('welcome-panel').classList.add('hidden');
     document.getElementById('student-login-panel').classList.remove('hidden');
+    if (SHARE_MODE) {   // shared preview: no roster, no student number — straight to the parts
+      this.studentName = 'Visitor';
+      if (lc) lc.classList.add('hidden');
+      renderStudentHome(this.studentName);
+    }
   },
 
   /* ── NAME SELECT / LOGIN ── */
@@ -1135,7 +1144,7 @@ const app = {
     this.responses[q.id] = { pick: picked, correct };
 
     if (correct) this.score++;
-    else this.missedQuestions.push({ id: q.id, q: plainText(q.q), skill: (window.SKILLS || {})[q.id], yourAnswer: picked });
+    else this.missedQuestions.push({ id: q.id, q: plainText(q.q), skill: (window.SKILLS || {})[q.id], yourAnswer: picked, correct: q.choices[q.answer] });
 
     document.querySelectorAll('.answer-btn').forEach((btn, i) => {
       btn.disabled = true;
@@ -1205,6 +1214,27 @@ const app = {
     document.getElementById('final-score-sub').textContent =
       `${SECTION_LABELS[this.currentSection]}${this.round > 1 ? ' · Retake ' + (this.round - 1) : ''} · ${this.studentName}`;
     document.getElementById('final-msg').textContent = msg;
+
+    // Shared preview only: the questions missed in this part, with the correct answers.
+    // Students never get this list on the test.
+    if (SHARE_MODE) {
+      document.getElementById('final-score-sub').textContent =
+        `${SECTION_LABELS[this.currentSection]} · Shared preview — this score was not saved`;
+      let box = document.getElementById('share-missed');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'share-missed';
+        box.className = 'missed-list';
+        document.getElementById('final-msg').insertAdjacentElement('afterend', box);
+      }
+      box.classList.toggle('hidden', !this.missedQuestions.length);
+      box.innerHTML = '<h3>📋 Questions missed in this part:</h3>' + this.missedQuestions.map(m =>
+        `<div class="missed-item">
+          <div class="mi-label">${escapeHtml(m.id)}</div>
+          <div style="margin:3px 0;">${escapeHtml(m.q)}</div>
+          <div>Your answer: <span style="color:var(--danger);">${escapeHtml(m.yourAnswer)}</span> &nbsp; ✅ Correct: <strong style="color:var(--correct);">${escapeHtml(m.correct || '')}</strong></div>
+        </div>`).join('');
+    }
 
     const pctEl = document.getElementById('final-percent');
     pctEl.classList.remove('revealed');
@@ -1385,7 +1415,7 @@ const app = {
     if (!prompts.length) { errEl.textContent = '⚠️ The written questions did not load. Please refresh the page.'; return; }
 
     const errors = [];
-    if (!this._writtenPreview) {
+    if (!this._writtenPreview && !SHARE_MODE) {   // a visitor may leave the written part blank
       prompts.forEach(p => {
         const parts = this._radParts(p);
         const empty = parts.filter(x => countWords(x.text) < 2).map(x => x.st.name);
@@ -1679,7 +1709,7 @@ app.init();
 
 /* ── CLOSED-TO-STUDENTS LOCK ────────────────────────── */
 (function applyTestLock() {
-  if (TEST_OPEN) return;
+  if (TEST_OPEN || SHARE_MODE) return;
   const btn = document.querySelector('.lgs-btn');
   if (!btn) return;
   btn.disabled = true;
