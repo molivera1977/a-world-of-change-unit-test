@@ -687,7 +687,7 @@ const app = {
     document.getElementById('welcome-panel').classList.add('hidden');
     document.getElementById('student-login-panel').classList.remove('hidden');
     if (SHARE_MODE) {   // shared preview: no roster, no student number — straight to the parts
-      this.studentName = 'Visitor';
+      this.studentName = 'Guest';
       if (lc) lc.classList.add('hidden');
       renderStudentHome(this.studentName);
     }
@@ -1219,7 +1219,7 @@ const app = {
     // Students never get this list on the test.
     if (SHARE_MODE) {
       document.getElementById('final-score-sub').textContent =
-        `${SECTION_LABELS[this.currentSection]} · Shared preview — this score was not saved`;
+        `${SECTION_LABELS[this.currentSection]} · Guest view — this score was not saved`;
       let box = document.getElementById('share-missed');
       if (!box) {
         box = document.createElement('div');
