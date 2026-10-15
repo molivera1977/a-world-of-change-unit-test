@@ -1608,6 +1608,21 @@ const app = {
   },
 
   /* ── RESTART ── */
+  /* Marcos 10/14: "Back to My Test" keeps a signed-in student signed in and shows
+     their next part; only Sign Out starts over. */
+  backToMenu() {
+    if (!this.studentName) { this.restart(); return; }
+    stopConfetti();
+    this.stopTimerEngine();
+    this.timerSeconds = 0;
+    this.show('start-screen');
+    document.getElementById('welcome-panel').classList.add('hidden');
+    document.getElementById('student-login-panel').classList.remove('hidden');
+    const lc = document.getElementById('login-step-card');
+    if (lc) lc.classList.add('hidden');
+    renderStudentHome(this.studentName);
+  },
+
   restart() {
     stopConfetti();
     this.stopTimerEngine();
