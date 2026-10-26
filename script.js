@@ -463,7 +463,7 @@ function speakElement(btn, el, rate) {
   });
   const text = words.join(' ');
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'en-US'; u.rate = rate || 0.92;
+  u.lang = 'en-US'; u.rate = rate || READ_RATE;
   let hlIdx = 0;
   u.onboundary = e => {
     if (e.name !== 'word') return;
@@ -479,8 +479,8 @@ function speakElement(btn, el, rate) {
   window.speechSynthesis.speak(u);
 }
 
-function speakDir(btn) { speakElement(btn, btn.closest('.dir-section').querySelector('.dir-text'), 0.92); }
-function speakWrittenPrompt(btn, promptId) { speakElement(btn, document.getElementById('prompt-text-' + promptId), 0.92); }
+function speakDir(btn) { speakElement(btn, btn.closest('.dir-section').querySelector('.dir-text'), READ_RATE); }
+function speakWrittenPrompt(btn, promptId) { speakElement(btn, document.getElementById('prompt-text-' + promptId), READ_RATE); }
 
 /* ── READ-ALOUD INTRO SPEAKS ITSELF ─────────────────
    Marcos 10/6: the "Read Aloud is Available!" screen announces itself
@@ -489,6 +489,7 @@ function speakWrittenPrompt(btn, promptId) { speakElement(btn, document.getEleme
    each word lights up as it is read. Leaving the screen (app.show) cancels
    the speech. */
 const INTRO_SAY = { '🔊': 'the speaker button', '⏹': 'the stop button', '—': ',' };
+const READ_RATE = 0.82;    // every read-aloud a student taps (Marcos 10/26: "I like the 0.82. It's clear and easy to listen to.")
 const INTRO_RATE = 0.82;   // Marcos 10/6: 0.92 ran ahead of the highlight
 let introToken = 0, introTimer = null;
 let introMsPerChar = null, introMsPerWord = null;   // learned from this device's voice
@@ -1131,7 +1132,7 @@ const app = {
       speakBtn.title = 'Read this choice aloud';
       speakBtn.onclick = e => {
         e.stopPropagation();
-        speakElement(speakBtn, btn.querySelector('.choice-text'), 0.92);
+        speakElement(speakBtn, btn.querySelector('.choice-text'), READ_RATE);
       };
 
       row.appendChild(speakBtn);
@@ -1156,7 +1157,7 @@ const app = {
     if (!prev) { el.classList.add('hidden'); el.innerHTML = ''; return; }
     el.innerHTML =
       `<div class="recap-head">
-         <button class="speak-btn recap-speak" onclick="speakElement(this, this.parentNode.querySelector('.recap-line'), 0.92)" title="Read your answer to Part A aloud">🔊</button>
+         <button class="speak-btn recap-speak" onclick="speakElement(this, this.parentNode.querySelector('.recap-line'), READ_RATE)" title="Read your answer to Part A aloud">🔊</button>
          <div class="recap-lines">
            <div class="recap-line"><span class="recap-label">📌 Your answer to Part A:</span> <span class="recap-ans">“${choiceHtml(prev.pick || '')}”</span></div>
          </div>
@@ -1327,7 +1328,7 @@ const app = {
         return `
           <div class="rad-step rad-step-${st.key}">
             <div class="rad-step-head">
-              <button class="speak-btn" onclick="speakElement(this, document.getElementById('rad-read-${fid}'), 0.92)" title="Read this part aloud">🔊</button>
+              <button class="speak-btn" onclick="speakElement(this, document.getElementById('rad-read-${fid}'), READ_RATE)" title="Read this part aloud">🔊</button>
               <div id="rad-read-${fid}">
                 <div class="rad-step-title"><span class="rad-letter" data-noread>${st.key}</span> ${st.name}</div>
                 <div class="rad-step-tip">${((p.tips || {})[st.key]) || st.tip}</div>
@@ -1353,7 +1354,7 @@ const app = {
         ${steps}
         <div class="rad-built hidden" id="rad-built-${p.id}">
           <div class="rad-step-head">
-            <button class="speak-btn" onclick="speakElement(this, document.getElementById('rad-built-text-${p.id}'), 0.92)" title="Read your answer aloud">🔊</button>
+            <button class="speak-btn" onclick="speakElement(this, document.getElementById('rad-built-text-${p.id}'), READ_RATE)" title="Read your answer aloud">🔊</button>
             <div>
               <div class="rad-built-label">📝 Your R.A.D. answer:</div>
               <div class="rad-built-text" id="rad-built-text-${p.id}"></div>
@@ -1500,7 +1501,7 @@ const app = {
     const qtText  = qtSpans.map(s => s.textContent).join(' ').replace(/_+/g, 'blank');
     let hlIdx = 0;
     const u = new SpeechSynthesisUtterance(qtText);
-    u.lang = 'en-US'; u.rate = 0.92;
+    u.lang = 'en-US'; u.rate = READ_RATE;
     u.onboundary = e => {
       if (e.name !== 'word') return;
       qtSpans.forEach(el => el.classList.remove('hl'));
