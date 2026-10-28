@@ -22,7 +22,7 @@
 /* ── CONFIG ─────────────────────────────────────────── */
 const TEST_OPEN     = true;    // false = students locked out; only Teacher Access works. Set true to open.
 const SHARE_MODE    = !!window.SHARE_MODE;   // set by share.js — a visitor's link, never a student's
-const INSTRUCT_SECS = 20;
+const INSTRUCT_SECS = 15;
 const READ_SECS     = 12;
 const STORAGE_KEY   = 'awoct_session_v1';        // + ':' + name — each student's unfinished multiple-choice part
 const SCORES_KEY    = 'awoct_scores_v1';         // finished parts: { name, section, round, … }
