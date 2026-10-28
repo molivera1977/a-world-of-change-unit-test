@@ -336,6 +336,16 @@ function countWords(text) {
   return String(text || '').trim().split(/\s+/).filter(w => /[A-Za-z0-9]/.test(w)).length;
 }
 
+/* Light the word the voice is on. The voice says where it is in the text (charIndex); it does NOT signal every
+   word — Samantha in Chrome gave no signal for "example:" after "For" (measured in Marcos's Chrome 10/28) — so
+   moving one word per signal fell further behind with each skipped word ("the highlighting can't keep up").
+   The spoken text has one token per span, joined by single spaces. */
+function lightAt(spans, text, charIndex) {
+  let j = 0, start = 0;
+  String(text).split(' ').forEach((tok, k) => { if (start <= charIndex) j = k; start += tok.length + 1; });
+  spans.forEach(sp => sp.classList.remove('hl'));
+  if (spans[j]) spans[j].classList.add('hl');
+}
 function wrapWords(html) {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
@@ -464,12 +474,10 @@ function speakElement(btn, el, rate) {
   const text = words.join(' ');
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US'; u.rate = rate || READ_RATE;
-  let hlIdx = 0;
   u.onboundary = e => {
     if (e.name !== 'word') return;
     spans.forEach(s => s.classList.remove('hl'));
-    if (spans[hlIdx]) spans[hlIdx].classList.add('hl');
-    hlIdx++;
+    lightAt(spans, u.text, e.charIndex);
   };
   u.onend = () => {
     spans.forEach(s => s.classList.remove('hl'));
@@ -1500,14 +1508,12 @@ const app = {
     if (!qtSpans.length) return;
     activeSpeakBtn = qBtn; qBtn.textContent = '⏹';
     const qtText  = qtSpans.map(s => s.textContent).join(' ').replace(/_+/g, 'blank');
-    let hlIdx = 0;
     const u = new SpeechSynthesisUtterance(qtText);
     u.lang = 'en-US'; u.rate = READ_RATE;
     u.onboundary = e => {
       if (e.name !== 'word') return;
       qtSpans.forEach(el => el.classList.remove('hl'));
-      if (qtSpans[hlIdx]) qtSpans[hlIdx].classList.add('hl');
-      hlIdx++;
+      lightAt(qtSpans, u.text, e.charIndex);
     };
     u.onend = () => {
       qtSpans.forEach(el => el.classList.remove('hl'));
