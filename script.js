@@ -805,7 +805,10 @@ const app = {
     document.getElementById('student-pin').value = '';
     const lc = document.getElementById('login-step-card');
     if (lc) lc.classList.add('hidden');
-    renderStudentHome(displayName);
+    // PICK UP ON ANY COMPUTER (Marcos 11/12): the review gate, the parts done, the rounds and the saved spot come
+    // from the sheet first (the menu held, "Looking for your saved work…"), so at home it is the screen from school
+    if (window.SpotSync) SpotSync.signIn(displayName).then(() => { if (this.studentName === displayName) renderStudentHome(displayName); });
+    else renderStudentHome(displayName);
   },
 
   /* ── REVIEW GATE (Teacher PIN skip) ── */
@@ -1827,3 +1830,19 @@ app.init();
     e.stopPropagation();
   }
 }, true));
+
+/* ── PICK UP ON ANY COMPUTER (Marcos 11/12: "i want the kids to have the same experience that they have at home to be
+   like they were logging on at school") — spot-sync.js (the same file on every site) keeps a copy of this site's save
+   (STORAGE_KEY) on the sheet, and of the finished work: the parts done, the written part, the rounds, the PIN's pass
+   AND the review's finished sections (REVIEW_SCORES_KEY, the review site's row). At sign-in (attemptLogin) the sheet
+   is asked once, before the review gate or the part list is drawn. */
+if (window.SpotSync) SpotSync.init({
+  site: 'a-world-of-change-unit-test', key: STORAGE_KEY, url: SHEET_URL, app,
+  perStudent: true,   // one save per student on a computer: progressKey(name) = STORAGE_KEY + ':' + name
+  who: () => app.studentName,
+  skip: () => SHARE_MODE || reviewMode,
+  usable: s => Array.isArray(s.currentBank) && s.currentBank.length > 0 && !!SECTION_LABELS[s.currentSection],
+  // finished parts follow the student too (Marcos 11/12: "Make finished parts and unlocks follow kids across computers next?" → "Yes, build it")
+  records: [{ key: SCORES_KEY }, { key: WRITTEN_KEY }, { key: ROUNDS_KEY, kind: 'map' }, { key: GATE_PASS_KEY, kind: 'map' },
+    { key: REVIEW_SCORES_KEY, site: 'a-world-of-change-review' }]
+});
