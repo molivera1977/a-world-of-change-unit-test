@@ -22,6 +22,14 @@
 /* ── CONFIG ─────────────────────────────────────────── */
 const TEST_OPEN     = true;    // false = students locked out; only Teacher Access works. Set true to open.
 const SHARE_MODE    = !!window.SHARE_MODE;   // set by share.js — a visitor's link, never a student's
+/* The Teacher screen (see promptTeacherReview): the PIN holds in this tab; a Try-it link is ?share=…&teach=<part> */
+const TEACHER_KEY      = 'awoct_teacher';          // sessionStorage: '1' = the Teacher PIN was given in this tab
+const TEACHER_PICK_KEY = 'awoct_teacher_pick';     // sessionStorage: the last part picked
+const TEACH = (() => {
+  const m = /^(vocab|comp|written|cloze)$/.exec(new URLSearchParams(location.search).get('teach') || '');
+  return SHARE_MODE && m ? m[1] : null;
+})();
+function teacherUnlocked() { try { return sessionStorage.getItem(TEACHER_KEY) === '1'; } catch (e) { return false; } }
 const INSTRUCT_SECS = 15;
 const READ_SECS     = 12;
 const STORAGE_KEY   = 'awoct_session_v1';        // + ':' + name — each student's unfinished multiple-choice part
@@ -659,7 +667,7 @@ const app = {
   readInterval:     null,
 
   show(id) {
-    ['start-screen','readaloud-screen','directions-screen','quiz-screen','end-screen','written-screen','scoreboard-screen']
+    ['start-screen','readaloud-screen','directions-screen','quiz-screen','end-screen','written-screen','scoreboard-screen','teacher-screen','key-screen']
       .forEach(s => document.getElementById(s).classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     syncFormLabel(id);
@@ -856,32 +864,206 @@ const app = {
 
   continueToNextSection() {
     stopConfetti();
-    if (reviewMode) { this._showReviewPicker(); return; }
     const next = getNextSection(this.studentName);
     if (!next) { this.showScores(true); return; }
     if (next === 'written') this.showWrittenScreen();
     else this.startSession(next);
   },
 
-  /* ── TEACHER REVIEW MODE ── */
+  /* ── TEACHER SCREEN (as on Dollars and Sense Test, 11/3: one in-page screen instead of the prompt() chain and
+     auto-run). Teacher Access → the Teacher PIN in the page → pick a part → 👀 Try it as a student or ✅ Answer key.
+     The PIN holds in this tab until ✕ Exit teacher. Nothing on the Teacher screen is saved or sent, and a
+     student's saved work on this computer is never touched. No Slide Mode on this site (a test has no lessons).
+     Works while TEST_OPEN is false: Try it runs in the guest view, which is always open. */
   promptTeacherReview() {
-    const pin = prompt('Enter Teacher PIN to access Review Mode:');
-    if (pin !== '9377') { if (pin !== null) alert('Incorrect PIN.'); return; }
-    this.studentName = 'Mr. O (Teacher)';
-    reviewMode = true;
-    this._showReviewPicker();
+    if (teacherUnlocked()) { this.openTeacher(); return; }
+    this.showPinModal('🧑‍🏫 Teacher', 'Enter the Teacher PIN.', () => {
+      try { sessionStorage.setItem(TEACHER_KEY, '1'); } catch (e) {}
+      this.openTeacher();
+    });
   },
 
-  _showReviewPicker() {
-    const section = prompt('Choose a part to preview:\n1 — Vocabulary\n2 — Comprehension\n3 — Written Response\n4 — Cloze\n\nEnter 1, 2, 3, or 4:');
-    const map = { '1': 'vocab', '2': 'comp', '3': 'written', '4': 'cloze' };
-    if (!map[section]) { if (section !== null) alert('Invalid choice.'); this.exitReviewMode(); return; }
-    if (map[section] === 'written') { this.showWrittenScreen(); return; }
-    const mode = prompt('Mode:\n1 — Manual (tap Next)\n2 — Auto-run\n\nEnter 1 or 2:');
-    if (mode !== '1' && mode !== '2') { if (mode !== null) alert('Invalid.'); this.exitReviewMode(); return; }
-    reviewAutoRun = (mode === '2');
-    this.startSession(map[section]);
+  _teacherPick() {
+    let p = null;
+    try { p = sessionStorage.getItem(TEACHER_PICK_KEY); } catch (e) {}
+    return SECTION_LABELS[p] ? p : 'vocab';
   },
+
+  openTeacher() {
+    stopActiveSpeech();
+    document.body.classList.remove('written-active');
+    this._renderTeacher(this._teacherPick());
+    this.show('teacher-screen');
+  },
+
+  teacherPick(section) { this._renderTeacher(section); },
+
+  _renderTeacher(section) {
+    try { sessionStorage.setItem(TEACHER_PICK_KEY, section); } catch (e) {}
+    document.getElementById('t-parts').innerHTML = Object.keys(SECTION_LABELS).map(k =>
+      `<button type="button" class="t-pick${k === section ? ' on' : ''}" aria-pressed="${k === section}" onclick="app.teacherPick('${k}')">${escapeHtml(SECTION_LABELS[k])}</button>`).join('');
+    const n = section === 'written' ? (window.WRITTEN_PROMPTS || []).length : sectionBank(section).length;
+    document.getElementById('t-picked').textContent = `${SECTION_LABELS[section]} · ${n} questions`;
+  },
+
+  /* 👀 Try it as a student: the guest view (share.js — nothing reaches the sheet, its own storage), started on this part */
+  teacherTry() {
+    location.href = `${location.pathname}${window.SHARE_LINK}&teach=${this._teacherPick()}`;
+  },
+
+  /* ✅ Answer key: every question of the part in the bank's order, the right answer marked;
+     the written part: each question's R.A.D. sentence starters (this site's written part has no model answer —
+     the student retypes the starters and finishes them in their own words, Marcos 10/9), graded by Mr. O */
+  teacherKey() {
+    const section = this._teacherPick();
+    document.getElementById('key-title').textContent = `✅ Answer key · ${SECTION_LABELS[section]} · A World of Change Test`;
+    // the printed packet's title (🖨️ Print hides the bar above): what it is, which part, how many
+    const howMany = section === 'written' ? (window.WRITTEN_PROMPTS || []).length : sectionBank(section).length;
+    document.getElementById('key-print-head').innerHTML =
+      `<h1>A World of Change Test — Answer Key</h1><p>${escapeHtml(SECTION_LABELS[section])} · ${howMany} questions · ${section === 'written' ? 'R.A.D. sentence starters · graded by Mr. O' : 'the right answer is marked ✅'}</p>`;
+    let html;
+    if (section === 'written') {
+      const starters = w => (window.RAD_STEPS || []).map(st =>
+        `<p><b>${st.key}</b> ${((w.starters || {})[st.key] || []).map(escapeHtml).join('<br>')}</p>`).join('');
+      html = (window.WRITTEN_PROMPTS || []).map(w =>
+        `<div class="key-q"><p class="key-where">${escapeHtml(w.label)}</p><p class="key-ask">${escapeHtml(w.prompt)}</p>` +
+        `<div class="key-why">${starters(w)}</div>` +
+        `<p class="key-note">Graded by Mr. O. There is no model answer: these are the sentence starters a student sees, types in the boxes, and finishes in their own words.</p></div>`).join('');
+    } else {
+      const bank = sectionBank(section);
+      // No letters (as on The Talent Show Test, Math Module 3 and the Lab): each child sees the choices shuffled,
+      // so a letter here would match no child's screen.
+      html = `<p class="key-note">Each child sees the choices in a shuffled order, so there are no letters here. The right answer has a ✅.</p>` +
+        bank.map((q, k) => {
+        const choices = `<ul class="key-choices">${q.choices.map((c, i) =>
+          `<li class="${i === q.answer ? 'key-right' : ''}">${escapeHtml(c)}${i === q.answer ? ' ✅' : ''}</li>`).join('')}</ul>`;
+        return `<div class="key-q"><p class="key-where">${q.id} · Question ${k + 1} of ${bank.length}</p>` +
+          `<p class="key-ask">${q.q}</p>${choices}</div>`;
+      }).join('');
+    }
+    document.getElementById('key-body').innerHTML = html;
+    this.show('key-screen');
+  },
+
+  /* 🖨️ Print the answer key (as on Dollars and Sense, Marcos 11/3: a title for the packet, 4 questions a page, "pages
+     need to use all of the page"): pages of 4 equal boxes that fill the page — the title shares page 1 — each page's
+     text as big as fits, then the browser's print, then the key back as it was on screen. */
+  printKey() {
+    this._preparePrint();
+    window.print();
+    this._endPrint();
+  },
+
+  _preparePrint() {
+    const body = document.getElementById('key-body');
+    const qs = Array.from(body.querySelectorAll('.key-q'));
+    const head = document.getElementById('key-print-head');
+    document.body.classList.add('key-printing');
+    body.innerHTML = '';
+    for (let i = 0; i < qs.length; i += 4) {
+      const pg = document.createElement('div');
+      pg.className = 'key-page';
+      if (i === 0) {
+        const title = head.cloneNode(true);
+        title.removeAttribute('id');
+        pg.appendChild(title);
+      }
+      qs.slice(i, i + 4).forEach(q => pg.appendChild(q));
+      for (let k = qs.slice(i, i + 4).length; qs.length > 4 && k < 4; k++) {   // a short last page keeps the same box size (a 2-question key fills its page)
+        const filler = document.createElement('div');
+        filler.className = 'key-q key-filler';
+        pg.appendChild(filler);
+      }
+      body.appendChild(pg);
+      this._fitKeyPage(pg);
+    }
+  },
+
+  /* the biggest text (18 pt down to 9 pt) at which every box on the page shows all of its question */
+  _fitKeyPage(pg) {
+    const fits = () => Array.from(pg.querySelectorAll('.key-q')).every(q => q.scrollHeight <= q.clientHeight + 1);
+    for (let pt = 18; pt >= 9; pt -= 0.5) {
+      pg.style.fontSize = pt + 'pt';
+      if (fits()) return;
+    }
+  },
+
+  _endPrint() {
+    document.body.classList.remove('key-printing');
+    this.teacherKey();
+  },
+
+  backToTeacher() {
+    if (TEACH) { location.href = `${location.pathname}${window.SHARE_TEACHER ? window.SHARE_LINK : ''}#teacher`; return; }   // a teacher/admin guest keeps the guest link
+    this.openTeacher();
+  },
+
+  exitTeacher() {
+    try { sessionStorage.removeItem(TEACHER_KEY); } catch (e) {}
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    this.exitReviewMode();
+  },
+
+  /* A Try-it link: signed in as the guest, one tap to start (the tap also lets the device speak) */
+  _teachReady() {
+    if (!SECTION_LABELS[TEACH]) return;
+    this.studentName = 'Guest';
+    document.getElementById('teach-bar').classList.remove('hidden');
+    document.body.classList.add('teach-on');
+    document.getElementById('welcome-panel').classList.add('hidden');
+    document.getElementById('student-login-panel').classList.add('hidden');
+    document.getElementById('teach-what').textContent = `${SECTION_LABELS[TEACH]} · A World of Change Test`;
+    document.getElementById('teach-ready').classList.remove('hidden');
+  },
+
+  teachStart() {
+    document.getElementById('teach-ready').classList.add('hidden');
+    if (TEACH === 'written') this.showWrittenScreen();
+    else this.startSession(TEACH);
+  },
+
+  /* ⏩ Skip the wait: opens what a student is waiting on right now — the reading lock on the choices,
+     the pause before Next, and the score screen's lock. */
+  teacherSkipWait() {
+    stopActiveSpeech();
+    if (this.readInterval) {
+      clearInterval(this.readInterval);
+      this.readInterval = null;
+      document.getElementById('reading-timer-bar').classList.add('hidden');
+      document.querySelectorAll('.answer-btn').forEach(b => { b.classList.remove('locked-choice'); b.disabled = false; });
+      if (!this.questionLocked) document.getElementById('confirm-btn').classList.remove('hidden');
+    }
+    if (this.nextInterval) {
+      clearInterval(this.nextInterval);
+      this.nextInterval = null;
+      document.getElementById('next-timer-bar').classList.add('hidden');
+      document.getElementById('next-btn').classList.remove('hidden');
+    }
+    if (this._scoreUnlock) this._scoreUnlock();
+  },
+
+  /* Go anywhere in the run: ◀ menu ▶ along the bottom. A question skipped is not scored. */
+  _teachSync() {
+    const bank = this.currentBank || [];
+    const jump = document.getElementById('teach-jump');
+    document.getElementById('teach-bar').classList.add('started');
+    if (jump.options.length !== bank.length) jump.innerHTML = bank.map((q, k) => `<option value="${k}">❓ Question ${k + 1} of ${bank.length}</option>`).join('');
+    jump.value = String(this.currentIndex);
+    document.getElementById('teach-prev').disabled = this.currentIndex <= 0;
+    document.getElementById('teach-next').disabled = this.currentIndex >= bank.length - 1;
+  },
+
+  teachGo(k) {
+    if (!this.currentBank || !this.currentBank[k]) return;
+    stopActiveSpeech();
+    if (this.readInterval) { clearInterval(this.readInterval); this.readInterval = null; }
+    if (this.nextInterval) { clearInterval(this.nextInterval); this.nextInterval = null; }
+    if (document.getElementById('quiz-screen').classList.contains('hidden')) this.show('quiz-screen');
+    this.currentIndex = k;
+    this.renderQuestion();
+  },
+
+  teachStep(d) { this.teachGo(this.currentIndex + d); },
 
   exitReviewMode() {
     reviewMode = false; reviewAutoRun = false;
@@ -1178,6 +1360,7 @@ const app = {
     if (this.currentIndex > 0 && this.currentIndex % 5 === 0 && !reviewMode) submitScorePartial();
     this.saveProgress();
     document.getElementById('answers').classList.remove('hidden');
+    if (TEACH) this._teachSync();
     this.startReadTimer();
     qtEl.focus({ preventScroll: true });   // keyboard users start on the new question
   },
@@ -1623,11 +1806,12 @@ const app = {
     let remaining = secs;
     const iv = setInterval(() => {
       remaining--; count.textContent = remaining;
-      if (remaining <= 0) {
-        clearInterval(iv); bar.classList.add('hidden');
-        buttons.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
-      }
+      if (remaining <= 0) this._scoreUnlock();
     }, 1000);
+    this._scoreUnlock = () => {   // also ⏩ Skip the wait on a Try-it run
+      clearInterval(iv); this._scoreUnlock = null; bar.classList.add('hidden');
+      buttons.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    };
   },
 
   clearScores() {
@@ -1807,6 +1991,8 @@ function stopConfetti() {
 
 /* ── BOOT ─────────────────────────────────────────────── */
 app.init();
+if (TEACH) app._teachReady();                                              // a Try-it link from the Teacher screen
+else if (location.hash === '#teacher' && teacherUnlocked()) app.openTeacher();   // ← Teacher screen from a Try-it run
 
 /* ── CLOSED-TO-STUDENTS LOCK ────────────────────────── */
 (function applyTestLock() {
@@ -1890,3 +2076,6 @@ function schoolStop() {
 applySchoolLock();
 if (window.SchoolClock) SchoolClock.whenKnown(applySchoolLock);
 setInterval(applySchoolLock, 30000);
+
+/* the teacher/admin guest link (share.js, Marcos 11/13): its 🧑‍🏫 Teacher / admin guest button opens the Teacher screen, no PIN */
+if (window.SHARE_TEACHER) window.SHARE_OPEN_TEACHER = () => app.openTeacher();
